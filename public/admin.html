@@ -1,1 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administrador de Paquetes</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+        .panel { background: white; padding: 20px; border-radius: 5px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .clients-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+        .client-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+        .client-online { border-left: 5px solid #27ae60; }
+        .client-offline { border-left: 5px solid #e74c3c; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, select, textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #2980b9; }
+        .status-message { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Administrador de Instalación de Paquetes</h1>
+            <p>Gestión remota de instalaciones</p>
+        </div>
 
+        <div class="panel" style="display: none;">
+            <h2>Clientes Conectados</h2>
+            <div id="clientsList" class="clients-grid"></div>
+        </div>
+
+        <div class="panel">
+            <h2>Enviar Paquete</h2>
+            <form id="packageForm">
+                <div class="form-group">
+                    <label for="clientSelect">Cliente Destino:</label>
+                    <select id="clientSelect" required>
+                        <option value="">Seleccionar cliente...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="packageName">Nombre del Paquete:</label>
+                    <input type="text" id="packageName" required placeholder="Ej: Google Chrome">
+                </div>
+                
+                <div class="form-group">
+                    <label for="packageType">Tipo de Paquete:</label>
+                    <select id="packageType" required>
+                        <option value="msi">MSI (Windows)</option>
+                        <option value="exe">EXE (Windows)</option>
+                        <option value="script">Script PowerShell</option>
+                        <option value="custom">Comando Personalizado</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="installCommand">Comando de Instalación:</label>
+                    <textarea id="installCommand" rows="3" required placeholder="Ej: msiexec /i package.msi /quiet"></textarea>
+                </div>
+                
+                <div class="form-group" style="display: none;">
+                    <label>Credenciales (encriptadas):</label>
+                    <input type="text" id="adminUser" placeholder="Usuario administrador" value="SYSTEM">
+                    <input type="password" id="adminPassword" placeholder="Contraseña (se encriptará)" style="margin-top: 5px;">
+                </div>
+                
+                <button type="submit">Enviar e Instalar</button>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>Log de Instalaciones</h2>
+            <div id="installationLog"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let clients = [];
+
+        // Cargar clientes al iniciar
+        fetch('/clients')
+            .then(response => response.json())
+            .then(data => {
+                clients = data;
+                updateClientsList();
+                updateClientSelect();
+            });
+
+        // Escuchar actualizaciones de clientes
+        socket.on('client-updated', (updatedClients) => {
+            clients = updatedClients;
+            updateClientsList();
+            updateClientSelect();
+        });
+
+        // Escuchar actualizaciones de instalación
+        socket.on('installation-update', (statusData) => {
+            addToLog(statusData);
+        });
+
+        function updateClientsList() {
+            const container = document.getElementById('clientsList');
+            container.innerHTML = '';
+            
+            clients.forEach(client => {
+                const card = document.createElement('div');
+                card.className = `client-card ${client.status === 'online' ? 'client-online' : 'client-offline'}`;
+                card.innerHTML = `
+                    <h3>${client.name}</h3>
+                    <p><strong>ID:</strong> ${client.id}</p>
+                    <p><strong>IP:</strong> ${client.ip}</p>
+                    <p><strong>Sistema:</strong> ${client.os}</p>
+                    <p><strong>Estado:</strong> <span style="color: ${client.status === 'online' ? '#27ae60' : '#e74c3c'}">${client.status}</span></p>
+                    <p><strong>Última vez:</strong> ${new Date(client.lastSeen).toLocaleString()}</p>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function updateClientSelect() {
+            const select = document.getElementById('clientSelect');
+            select.innerHTML = '<option value="">Seleccionar cliente...</option>';
+            
+            clients.filter(client => client.status === 'online').forEach(client => {
+                const option = document.createElement('option');
+                option.value = client.id;
+                option.textContent = `${client.name} (${client.os})`;
+                select.appendChild(option);
+            });
+        }
+
+        function addToLog(statusData) {
+            const log = document.getElementById('installationLog');
+            const message = document.createElement('div');
+            message.className = `status-message ${statusData.success ? 'status-success' : 'status-error'}`;
+            message.innerHTML = `
+                <strong>${new Date().toLocaleString()}</strong> - 
+                Cliente: ${statusData.clientId} - 
+                ${statusData.message}
+            `;
+            log.insertBefore(message, log.firstChild);
+        }
+
+        // Manejar envío de paquetes
+        document.getElementById('packageForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                clientId: document.getElementById('clientSelect').value,
+                packageName: document.getElementById('packageName').value,
+                packageType: document.getElementById('packageType').value,
+                installCommand: document.getElementById('installCommand').value,
+                credentials: {
+                    user: document.getElementById('adminUser').value,
+                    password: document.getElementById('adminPassword').value
+                }
+            };
+
+            try {
+                const response = await fetch('/deploy-package', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    addToLog({
+                        success: true,
+                        clientId: formData.clientId,
+                        message: `Paquete "${formData.packageName}" enviado exitosamente`
+                    });
+                    e.target.reset();
+                } else {
+                    addToLog({
+                        success: false,
+                        clientId: formData.clientId,
+                        message: `Error: ${result.message}`
+                    });
+                }
+            } catch (error) {
+                addToLog({
+                    success: false,
+                    clientId: formData.clientId,
+                    message: `Error de conexión: ${error.message}`
+                });
+            }
+        });
+    </script>
+</body>
+</html>
