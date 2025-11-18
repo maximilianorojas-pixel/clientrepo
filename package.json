@@ -1,0 +1,20 @@
+{
+  "name": "remote-package-server",
+  "version": "1.0.0",
+  "description": "Servidor para instalación remota de paquetes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "crypto": "^1.0.1",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
